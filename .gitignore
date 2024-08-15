@@ -1,3 +1,12 @@
+# Self defined
+.DS_Store
+buildroot
+buildroot_old
+hexdumps
+hexdump_old.sh
+
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
