@@ -20,15 +20,22 @@ To start, we'll a much more trivial problem. Classifying the endianness of an ar
 5. Train a model on the combined dataset of little and big endian hex code.
 6. Validate on test set.
 
-## Development
+## Development of Archtype Dataset
 
 ### Setting up Buildroot
 
 Buildroot will be how we build different architectures with the data we need.
 
-- We run buildroot in a docker container to avoid issues with host architecture and OS (in my case ARM and MacOS). See `Dockerfile` for details on dependencies.
+- Download buildroot by cloning the repo into the `archbuild` directory.
+
+```bash
+cd archbuild
+git clone https://gitlab.com/buildroot.org/buildroot.git
+```
 
 ### Building Architectures
+
+We run buildroot in a docker container to avoid issues with host architecture and OS (in my case ARM and MacOS). See `archbuild/Dockerfile` for details on dependencies.
 
 #### Container Setup
 
@@ -64,41 +71,4 @@ docker exec endl sh -c "make clean && make --keep-going"
 ```bash
 docker exec endl sh -c "./hexdump.sh"
 docker cp endl:/hexdump /hexdumps/hexdump_{archtype}
-```
-
-## Notes
-
-### Reading the ELF (Executable and Linkable Format) header to see specs
-
-This will tell you if a file is a binary executable.
-
-```bash
-readelf -h [file_name]
-```
-
-### Octal Dump (od)
-
-Used to get the hex format of each binary file.
-
-- Flags I used:
-
-```bash
-od -j64 -w64 -v -x -An [file_name]
-```
-
-- j64: Jump 64 bytes before reading to avoid reading header info
-- v: Don't delete duplicate information
-- x: select hexidecimal as output (each 4 number unit is 2 bytes)
-- An: Don't output offset column
-- (optional) w64: write 64 columns (for 32 bytes per column)
-- [Read More](https://www.geeksforgeeks.org/od-command-linux-example/)
-
-### Buildroot menuconfig
-
-Defining your own architecture with buildroot. This is how I obtained the configs for the desired architecture setup.
-
-```bash
-make clean
-make menuconfig # Select architecture and packages of your choice in GUI.
-make --keep-going
 ```
