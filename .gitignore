@@ -4,7 +4,8 @@ buildroot
 buildroot_old
 hexdumps
 hexdump_old.sh
-datasetbuild/test
+datasetbuild/dataset
+data2set-copy.py
 
 
 
