@@ -72,3 +72,7 @@ docker exec endl sh -c "make clean && make --keep-going"
 docker exec endl sh -c "./hexdump.sh"
 docker cp endl:/hexdump /hexdumps/hexdump_{archtype}
 ```
+
+## TODO
+
+- [] Add all libraries in config

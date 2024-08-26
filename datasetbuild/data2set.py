@@ -83,7 +83,8 @@ class Data2Set:
             self,
             output_dir: str,
             max_shard: str = "250MB",
-            test_size: float = 0.2,
+            test_size: float = 0.15,
+            dev_size: float = 0.15,
             random_state: int = 42,
             sep: Union[str, None] = None,
             max_row_len: Union[int, None] = 512
@@ -107,6 +108,7 @@ class Data2Set:
         # Convert to bytes depending on last to characters
         maxSize = self._convert_to_bytes(max_shard)
         # Read and write data in configuration to parquet files by yielding when max file size is reached.
+        # TODO: seperate ds creation to function
         commitments_test = self._commit_file_data(test_config, maxSize, sep, max_row_len)
         os.makedirs(os.path.join(output_dir, 'test'))
         for i, commitment in enumerate(commitments_test):
