@@ -7,11 +7,11 @@ Uses:
 
 Ideas:
 
-- Collect a variety of binary data from different ARM images, and train a classifier to distinguise characteristics about the architecture soley from binary data. e.g. distinguise a chunk of binary is the printf command.
+- Collect a variety of binary data from images of different architectures, and train a classifier to distinguise characteristics about the architecture soley from binary data. e.g. distinguise a chunk of binary is the printf command.
 
 ## Design
 
-To start, we'll a much more trivial problem. Classifying the endianness of an architecture based on the binary we're given.
+We'll start with a much more trivial problem. Classifying the endianness of an architecture based on the binary we're given.
 
 1. Get Little Endian and Big Endian ARM setup with as many library downloads as possible.
 2. Collect hex code from binaries of each architectures usr/bin directory.
