@@ -8,7 +8,7 @@ import psutil
 
 """
 TODO: 
-Build dataset builder that takes in files in a directories and feature engineers the data.
+Build dataset builder that takes in files in directories and feature engineers the data.
 
 Methods:
 1. Staging the build with multiple directories and feature assignments.
@@ -84,7 +84,6 @@ class Data2Set:
             output_dir: str,
             max_shard: str = "250MB",
             test_size: float = 0.15,
-            dev_size: float = 0.15,
             random_state: int = 42,
             sep: Union[str, None] = None,
             max_row_len: Union[int, None] = 512
@@ -99,7 +98,7 @@ class Data2Set:
             **sep**: Separator to use when splitting chunks (default None).
             **max_row_len**: Maximum length of each row (default 512).
         '''
-        # Shuffle the entire dataset TODO: Maybe want to do this after getting data because each row will still have many lines of data from a given feature.
+        # Shuffle the entire dataset TODO: May want to do this after getting data because each row will still have many lines of data from a given feature.
         shuffled_config = self.rowConfig.sample(frac=1, random_state=random_state).reset_index(drop=True)
         # Split into train and test
         split_index = int(len(shuffled_config) * (1 - test_size))
@@ -108,17 +107,34 @@ class Data2Set:
         # Convert to bytes depending on last to characters
         maxSize = self._convert_to_bytes(max_shard)
         # Read and write data in configuration to parquet files by yielding when max file size is reached.
-        # TODO: seperate ds creation to function
         commitments_test = self._commit_file_data(test_config, maxSize, sep, max_row_len)
-        os.makedirs(os.path.join(output_dir, 'test'))
-        for i, commitment in enumerate(commitments_test):
-            df = pd.DataFrame(commitment, columns=self.columns)
-            df.to_parquet(os.path.join(output_dir, 'test', f'shard_{i}.parquet'))
+        self._write_commitments(commitments_test, output_dir, 'test')
         commitments_train = self._commit_file_data(train_config, maxSize, sep, max_row_len)
-        os.makedirs(os.path.join(output_dir, 'train'))
-        for i, commitment in enumerate(commitments_train):
+        self._write_commitments(commitments_train, output_dir, 'train')
+
+    def _write_commitments(self, commitments, output_dir, subset):
+        '''
+        Saves the commitments to the output directory.
+
+        ### Parameters
+            **commitments**: List of commitments to save.
+            **output_dir**: Directory to save the commitments.
+            **subset**: Subset of the data to save.
+        '''
+        os.makedirs(os.path.join(output_dir, subset), exist_ok=True)
+        for i, commitment in enumerate(commitments):
             df = pd.DataFrame(commitment, columns=self.columns)
-            df.to_parquet(os.path.join(output_dir, 'train', f'shard_{i}.parquet'))
+            df.to_parquet(os.path.join(output_dir, subset, f'shard_{i}.parquet'))
+
+    def _open_new_file(self, file_path: str):
+        ''' Opens a new file for writing.
+
+        ### Parameters
+            **file_path**: Path to the file to open.
+        '''
+        if self.currentFile != None:
+            self.currentFile.close()
+        self.currentFile = open(file_path, 'r')
 
     def _commit_file_data(self, df: 'pd.DataFrame', max_size: int, sep: Union[str, None], max_row_len: Union[int, None]):
         ''' Commits file data to chunks based on max_size.
@@ -138,8 +154,8 @@ class Data2Set:
         for row in df.to_numpy().tolist():
             dataFilePath = row[0]
             # Read in file data in chunks of max size
-            f = open(dataFilePath, 'r')
-            chunks = self._read_data(f, max_size)
+            self._open_new_file(dataFilePath)
+            chunks = self._read_data(self.currentFile, max_size)
             # for each chunk read in append the data and the data's feature values to the commitment list
             for chunk in chunks:
                 chunkSplit = self._split_chunk(chunk, sep, max_row_len)
@@ -149,7 +165,7 @@ class Data2Set:
                 # Yield current commitment when max file size is reached
                 if fileSize >= max_size:
                     yield committedList
-                    f.close()
+                    self._open_new_file(dataFilePath)
                     committedList = []
                     fileSize = 0
                     break # TODO: instead of breaking and potentially loosing lots of file data here, write a function to open and close files. Will potentially be pretty difficult with this being in a nested for loop.
