@@ -88,7 +88,7 @@ class Data2Set:
             test_size: float = 0.15,
             random_state: int = 42,
             sep: Union[str, None] = None,
-            max_row_len: Union[int, None] = 512
+            max_row_len: Union[int, None] = None
         ) -> None:
         ''' Builds the dataset by shuffling, splitting into train and test sets, and saving as parquet files.
 
@@ -167,8 +167,7 @@ class Data2Set:
                     # Iterate through each row in chunk_split
                     for chunk_row in chunk_split:
                         # Calculate the size of the current row
-                        row_size = len(chunk_row[0]) + len(self.columns) - 1
-                        
+                        row_size = len(chunk_row)
                         # Yield current commitment when max file size is reached
                         if file_size + row_size >= max_bytes:
                             yield committed_list
@@ -176,7 +175,7 @@ class Data2Set:
                             file_size = 0
                         
                         # Append data + feature values to current list of data to commit
-                        committed_list.append(chunk_row + feature_values)
+                        committed_list.append([chunk_row] + feature_values)
                         file_size += row_size
 
         # If there's any remaining data, yield it
@@ -195,19 +194,19 @@ class Data2Set:
         ### Returns
             List of split chunks.
         '''
-        chunkSplit = []
         # If a separator is provided and not None, join the chunk after splitting
-        chunk = ' '.join(chunk.split(sep)) if sep != None else chunk
+        if sep != None:
+            chunk = ' '.join(chunk.split(sep))
         
         if max_row_len != None:
+            chunkSplit = []
             # Split the chunk into rows of max_row_len
             for i in range(len(chunk) // max_row_len):
                 # Extract a substring of length max_row_len and append it to chunkSplit
-                chunkSplit.append([chunk[i*max_row_len:(i*max_row_len)+max_row_len]])
+                chunkSplit.append(chunk[i*max_row_len:(i*max_row_len)+max_row_len])
         else:
             # If max_row_len is None, keep the entire chunk as a single row
-            chunkSplit = [chunkSplit]
-        
+            chunkSplit = [chunk]
         return chunkSplit
         
 
@@ -270,6 +269,6 @@ if __name__ == '__main__':
 
     test.stage(path='../archbuild/hexdumps/hexdump_little-plus-libraries', feature_values=['little'])
 
-    test.build('./dataset', sep='\n')
+    test.build('./dataset', sep='\n', max_row_len=1024*4)
     
     #test.read_parquet('./test'+'/file_path')

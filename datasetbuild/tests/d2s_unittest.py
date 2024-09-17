@@ -35,7 +35,7 @@ class TestData2Set(unittest.TestCase):
         d2s = Data2Set(feature_columns=['lang'])
         d2s.stage(self.test_dir, feature_values=['en'])
         output_dir = os.path.join(self.test_dir, 'output')
-        d2s.build(output_dir, max_shard='1KB', test_size=0.2)
+        d2s.build(output_dir, max_bytes='1KB', test_size=0.2)
         self.assertTrue(os.path.exists(os.path.join(output_dir, 'train')))
         self.assertTrue(os.path.exists(os.path.join(output_dir, 'test')))
 
@@ -44,6 +44,20 @@ class TestData2Set(unittest.TestCase):
         self.assertEqual(d2s._convert_to_bytes('1KB'), 1024)
         self.assertEqual(d2s._convert_to_bytes('1MB'), 1024 * 1024)
         self.assertEqual(d2s._convert_to_bytes('1GB'), 1024 * 1024 * 1024)
+
+    def test_split_chunk(self):
+        d2s = Data2Set()
+        chunk = "This is a test chunk"
+        self.assertEqual(d2s._split_chunk(chunk, None, None), ["This is a test chunk"])
+        self.assertEqual(d2s._split_chunk(chunk, " ", None), ["This is a test chunk"])
+        self.assertEqual(d2s._split_chunk(chunk, None, 5), ["This ", "is a ", "test ", "chunk"])
+
+    def test_read_data(self):
+        d2s = Data2Set()
+        with open(os.path.join(self.test_dir, 'test_file.txt'), 'r') as f:
+            chunks = list(d2s._read_data(f, 100))
+        self.assertTrue(all(len(chunk) <= 100 for chunk in chunks))
+        self.assertEqual(''.join(chunks), 'Test data\n' * 1000)
 
 if __name__ == '__main__':
     unittest.main()
