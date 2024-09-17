@@ -6,7 +6,7 @@ hexdumps
 hexdump_old.sh
 datasetbuild/dataset
 data2set-copy.py
-
+endian_set_to_hub.ipynb
 
 
 # Byte-compiled / optimized / DLL files
