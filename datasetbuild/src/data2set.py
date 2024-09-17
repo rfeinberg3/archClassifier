@@ -269,6 +269,6 @@ if __name__ == '__main__':
 
     test.stage(path='../archbuild/hexdumps/hexdump_little-plus-libraries', feature_values=['little'])
 
-    test.build('./dataset', sep='\n', max_row_len=1024*4)
+    test.build('./dataset', sep='\n', max_row_len=512)
     
     #test.read_parquet('./test'+'/file_path')
