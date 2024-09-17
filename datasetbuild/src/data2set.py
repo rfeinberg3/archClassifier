@@ -1,23 +1,11 @@
-from typing import Union, IO
+from typing import Union, IO, Generator
 import os
 import pandas as pd
 import pyarrow.parquet as pq
 
 import time
 import psutil
-
-"""
-TODO: 
-Build dataset builder that takes in files in directories and feature engineers the data.
-
-Methods:
-1. Staging the build with multiple directories and feature assignments.
-2. Building the dataset with parameters to:
-    a. Assign the length of data in each row
-    b. Shuffle and split dataset into train and test with specified ratio
-    c. Set a max file output size (by creating parquet shards)
-"""
-
+from concurrent.futures import ThreadPoolExecutor
 # Test functions
 def time_operation(func):
     def wrapper(*args, **kwargs):
@@ -39,10 +27,21 @@ def print_memory_usage(func):
         return result
     return wrapper
 
+
 # Main Class
 class Data2Set:
-    ''' Takes in the column names / features you want in your dataset.
+    ''' Takes in the column names / features you want in your dataset. Can be used to build a dataset for training a model or for feature engineering from a set of files.
 
+    Methods:
+    1. Staging the build with multiple directories and feature assignments.
+    2. Building the dataset with parameters to:
+        a. Assign the length of data in each row
+        b. Shuffle and split dataset into train and test with specified ratio
+        c. Set a max file output size (by creating parquet shards)
+        d. Set a max row length
+        e. Set a separator for splitting data in each file
+    3. Reading the parquet files back into a pandas DataFrame
+        
     ### Parameters
         **data_column**: The name for the column your be reading data into. Default: 'data'
         **feature_columns**: The name(s) of columns where you'll be assigning feature values. Format: ['col1', 'col2', ... , 'coln']. (default = [] == no feature columns).
@@ -53,10 +52,10 @@ class Data2Set:
             feature_columns: list[str] = []
         ) -> None:
         self.columns = [data_column] + feature_columns
-        self.rowConfig = pd.DataFrame(columns=self.columns)
-        self.currentFile = None
-        self.currentSize = 0
-        self.fileCounter = 0
+        self.row_config = pd.DataFrame(columns=self.columns)
+        self.current_file = None
+        self.current_size = 0
+
 
     def stage(self, path: str, feature_values: list[str] = []) -> None:
         ''' Stages the list of files needed to build the dataset
@@ -68,21 +67,24 @@ class Data2Set:
         '''
         # Error handling
         assert len(feature_values) == len(self.columns)-1, f"feature_values = {len(feature_values)} and feature_columns = {len(self.columns)-1}. They must be the same shape"
+
         # Walk through directory and add the full_path of each file and assigned feature values to respective rows in a DataFrame.
-        fileFeatureList = []
+        file_feature_list = []
         for root, dirs, files in os.walk(path):
             for file in files:
-                fileFeatureList.append([os.path.join(root, file)] + feature_values)
+                file_feature_list.append([os.path.join(root, file)] + feature_values)
+
         # Append to row configuration list
-        self.rowConfig = pd.concat(
-            [pd.DataFrame(fileFeatureList, columns=self.columns), self.rowConfig],
+        self.row_config = pd.concat(
+            [pd.DataFrame(file_feature_list, columns=self.columns), self.row_config],
             ignore_index=True
         )
+
 
     def build(
             self,
             output_dir: str,
-            max_shard: str = "250MB",
+            max_bytes: str = "250MB",
             test_size: float = 0.15,
             random_state: int = 42,
             sep: Union[str, None] = None,
@@ -98,19 +100,23 @@ class Data2Set:
             **sep**: Separator to use when splitting chunks (default None).
             **max_row_len**: Maximum length of each row (default 512).
         '''
-        # Shuffle the entire dataset TODO: May want to do this after getting data because each row will still have many lines of data from a given feature.
-        shuffled_config = self.rowConfig.sample(frac=1, random_state=random_state).reset_index(drop=True)
+        # Shuffle the entire dataset TODO: May want to do this after getting data because each row will still have many lines of data with the same feature values from a given file.
+        shuffled_config = self.row_config.sample(frac=1, random_state=random_state).reset_index(drop=True)
+        
         # Split into train and test
         split_index = int(len(shuffled_config) * (1 - test_size))
         train_config = shuffled_config.iloc[:split_index]
         test_config = shuffled_config.iloc[split_index:]
-        # Convert to bytes depending on last to characters
-        maxSize = self._convert_to_bytes(max_shard)
+        
+        # Convert to bytes depending on last two characters of max_bytes
+        max_bytes = self._convert_to_bytes(max_bytes)
+        
         # Read and write data in configuration to parquet files by yielding when max file size is reached.
-        commitments_test = self._commit_file_data(test_config, maxSize, sep, max_row_len)
+        commitments_test = self._commit_file_data(test_config, max_bytes, sep, max_row_len)
         self._write_commitments(commitments_test, output_dir, 'test')
-        commitments_train = self._commit_file_data(train_config, maxSize, sep, max_row_len)
+        commitments_train = self._commit_file_data(train_config, max_bytes, sep, max_row_len)
         self._write_commitments(commitments_train, output_dir, 'train')
+
 
     def _write_commitments(self, commitments, output_dir, subset):
         '''
@@ -126,17 +132,14 @@ class Data2Set:
             df = pd.DataFrame(commitment, columns=self.columns)
             df.to_parquet(os.path.join(output_dir, subset, f'shard_{i}.parquet'))
 
-    def _open_new_file(self, file_path: str):
-        ''' Opens a new file for writing.
-
-        ### Parameters
-            **file_path**: Path to the file to open.
-        '''
-        if self.currentFile != None:
-            self.currentFile.close()
-        self.currentFile = open(file_path, 'r')
-
-    def _commit_file_data(self, df: 'pd.DataFrame', max_size: int, sep: Union[str, None], max_row_len: Union[int, None]):
+    
+    def _commit_file_data(
+            self,
+            df: 'pd.DataFrame',
+            max_bytes: int,
+            sep: Union[str, None],
+            max_row_len: Union[int, None]
+        ) -> Generator[list[str], None, None]:
         ''' Commits file data to chunks based on max_size.
 
         ### Parameters
@@ -148,32 +151,41 @@ class Data2Set:
         ### Yields
             List of committed rows to write to dataset.
         '''
-        committedList = []
-        fileSize = 0
-        # Iterate through each file to be read on the ro configuration list
+        committed_list = []
+        file_size = 0
+
+        # Iterate through each file to be read in self.rowConfig (each row will contain its own distinct feature values)
         for row in df.to_numpy().tolist():
-            dataFilePath = row[0]
-            # Read in file data in chunks of max size
-            self._open_new_file(dataFilePath)
-            chunks = self._read_data(self.currentFile, max_size)
-            # for each chunk read in append the data and the data's feature values to the commitment list
-            for chunk in chunks:
-                chunkSplit = self._split_chunk(chunk, sep, max_row_len)
-                for chunkRows in chunkSplit:
-                    fileSize += len(chunkRows[0]) + len(self.columns) - 1 # Add to current file size the size of chunkRows + columns (in bytes)
-                    committedList.append(chunkRows + row[1:]) # Append data + feature values to current list of data to commit
-                # Yield current commitment when max file size is reached
-                if fileSize >= max_size:
-                    yield committedList
-                    self._open_new_file(dataFilePath)
-                    committedList = []
-                    fileSize = 0
-                    break # TODO: instead of breaking and potentially loosing lots of file data here, write a function to open and close files. Will potentially be pretty difficult with this being in a nested for loop.
-        # If max file size was never exceeded just yield
-        yield committedList
+            data_file_path = row[0] # e.g. '../archbuild/hexdumps/hexdump_big-plus-libraries/printf.bin'
+            feature_values = row[1:]
+
+            # Read in file data in chunks of max_size (or less)
+            with open(data_file_path, 'r') as file:
+                for chunk in self._read_data(file, max_bytes):
+                    chunk_split = self._split_chunk(chunk, sep, max_row_len) # Split the chunk into rows of data (if applicable)
+                    
+                    # Iterate through each row in chunk_split
+                    for chunk_row in chunk_split:
+                        # Calculate the size of the current row
+                        row_size = len(chunk_row[0]) + len(self.columns) - 1
+                        
+                        # Yield current commitment when max file size is reached
+                        if file_size + row_size >= max_bytes:
+                            yield committed_list
+                            committed_list = []
+                            file_size = 0
+                        
+                        # Append data + feature values to current list of data to commit
+                        committed_list.append(chunk_row + feature_values)
+                        file_size += row_size
+
+        # If there's any remaining data, yield it
+        if committed_list:
+            yield committed_list
+
 
     def _split_chunk(self, chunk: str, sep: Union[str, None], max_row_len: Union[int, None]):
-        ''' Splits a chunk of text into smaller pieces based on separator and maximum row length.
+        ''' Splits a chunk of text into smaller pieces based on sep and max_row_len.
 
         ### Parameters
             **chunk**: The text chunk to split.
@@ -184,14 +196,21 @@ class Data2Set:
             List of split chunks.
         '''
         chunkSplit = []
-        chunk = ' '.join(chunk.split(sep)) if sep != '' else chunk
+        # If a separator is provided and not None, join the chunk after splitting
+        chunk = ' '.join(chunk.split(sep)) if sep != None else chunk
+        
         if max_row_len != None:
+            # Split the chunk into rows of max_row_len
             for i in range(len(chunk) // max_row_len):
+                # Extract a substring of length max_row_len and append it to chunkSplit
                 chunkSplit.append([chunk[i*max_row_len:(i*max_row_len)+max_row_len]])
         else:
+            # If max_row_len is None, keep the entire chunk as a single row
             chunkSplit = [chunkSplit]
+        
         return chunkSplit
         
+
     def _read_data(self, f: IO[str], max_size: int):
         ''' Reads data from a file in chunks of specified size.
 
@@ -207,6 +226,7 @@ class Data2Set:
             if not chunk:
                 break
             yield chunk
+
 
     def _convert_to_bytes(self, size_string):
         """
@@ -228,15 +248,19 @@ class Data2Set:
         else:
             raise ValueError("Unsupported size unit. Use KB, MB, or GB.")
         
+
     def read_parquet(self, file):
         df = pq.read_pandas(file).to_pandas()
         df.to_csv('tester.csv')
 
+
     def __len__(self) -> int:
-        return len(self.rowConfig)
+        return len(self.row_config)
     
+
     def __str__(self) -> str:
-        return str(self.rowConfig)
+        return str(self.row_config)
+
 
 if __name__ == '__main__':
 
@@ -249,5 +273,3 @@ if __name__ == '__main__':
     test.build('./dataset', sep='\n')
 
     #test.read_parquet('./test'+'/file_path')
-
-
