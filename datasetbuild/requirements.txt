@@ -1,4 +1,5 @@
 pandas
 pyarrow
 pytest
+matplotlib
 

@@ -2,30 +2,7 @@ from typing import Union, IO, Generator
 import os
 import pandas as pd
 import pyarrow.parquet as pq
-
-import time
-import psutil
 from concurrent.futures import ThreadPoolExecutor
-# Test functions
-def time_operation(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        print(f"Operation took {end_time - start_time:.4f} seconds")
-        return result
-    return wrapper
-def get_memory_usage():
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
-    return mem_info.rss / 1024 / 1024  # in MB
-def print_memory_usage(func):
-    def wrapper(*args, **kwargs):
-        print(f"Memory before: {get_memory_usage():.2f} MB")
-        result = func(*args, **kwargs)
-        print(f"Memory after: {get_memory_usage():.2f} MB")
-        return result
-    return wrapper
 
 
 # Main Class

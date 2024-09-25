@@ -5,7 +5,7 @@ Uses:
 - Finding what architecture a piece of hardware has on it based only on the binary extracted. Assuming no headers are present in the binary.
 - Without headers reverse-eng tools don't know what to do.
 
-Ideas:
+Idea:
 
 - Collect a variety of binary data from images of different architectures, and train a classifier to distinguise characteristics about the architecture soley from binary data. e.g. distinguise a chunk of binary is the printf command.
 
@@ -73,6 +73,22 @@ docker exec endl sh -c "./hexdump.sh"
 docker cp endl:/hexdump /hexdumps/hexdump_{archtype}
 ```
 
+## Building Dataset
+
+See `datasetbuild/src/data2set.py` for details on dataset creation.
+
+## Dataset Analysis
+
+See `datasetbuild/src/set_analyzer.py` for details on dataset analysis.
+
+## Classification
+
+See `classifiers/notebooks/` for details on classification model development.
+
 ## TODO
 
-- [] Add all libraries in config
+- [] Gradio app for endianness classification
+- [] Add all libraries in config to each arch build
+- [] Add more architectures
+- [] Develop tokenization method for binary data
+- [] Try out other models
