@@ -88,6 +88,7 @@ See `classifiers/notebooks/` for details on classification model development.
 ## TODO
 
 - [] Gradio app for endianness classification
+- [] create dev set split
 - [] Add all libraries in config to each arch build
 - [] Add more architectures
 - [] Develop tokenization method for binary data
