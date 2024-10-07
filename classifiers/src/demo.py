@@ -16,5 +16,5 @@ if __name__ == '__main__':
 
     pipe = pipeline("text-classification", model=load_model(), tokenizer=load_tokenizer())
 
-    demo = gr.Interface().from_pipeline(pipe)
+    demo = gr.Interface.from_pipeline(pipe)
     demo.launch()
