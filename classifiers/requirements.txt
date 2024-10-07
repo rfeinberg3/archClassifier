@@ -2,3 +2,4 @@ datasets
 transformers
 evaluate
 torch
+gradio
